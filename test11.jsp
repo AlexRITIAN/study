@@ -14,10 +14,12 @@
     import="java.io.IOException"%><%@page
     import="java.io.InputStreamReader"%><%@page
     import="java.io.PrintWriter"%><%@page
+    import="java.io.BufferedInputStream"%><%@page
     import="java.util.Date"%><%@page
     import="java.util.Calendar"%><%@page
-    import=" java.lang.Integer"%><%@page
-    import=" java.lang.Runnable"%><%@page
+    import="java.lang.Integer"%><%@page
+    import="java.lang.Runnable"%><%@page
+    import="java.util.Vector"%><%@page
     import="javax.management.Attribute"%><%@page
     import="javax.management.AttributeList"%><%@page
     import="javax.management.InstanceNotFoundException"%><%@page
@@ -44,9 +46,16 @@
     import="wt.util.jmx.WDSJMXConnector"%><%@page
     import="wt.util.jmx.AccessUtil"%><%@page
     import="wt.util.jmx.JmxConnectUtil"%><%@page
+    import="wt.org.OrganizationServicesHelper"%><%@page
+    import="wt.org.WTGroup"%><%@page
+    import="wt.org.WTPrincipal"%><%@page
+    import="wt.org.WTUser"%><%@page
+    import="wt.session.SessionHelper"%><%@page
+    import="wt.util.WTException"%><%@page
     import="wt.util.jmx.serverStatusResource"%>
 <%@ page language="java" contentType="text/html; charset=UTF-8"
     pageEncoding="UTF-8"%>
+<%@ page errorPage="/netmarkets/jsp/util/error.jsp"%>
 <%@taglib uri="http://java.sun.com/jsp/jstl/core" prefix="c"%>
 <%!
 private static final String  windchillWebAppPath;
@@ -132,6 +141,8 @@ private static final Object  methodServersGetAttrsArgs[] =
 
 private static String wcHome;
 private static int count;
+private static Map<String,List<String>> resultMap = new HashMap<>();
+private static Map<String,List<String>> errorMap = new HashMap<>();
 
 
 %>
@@ -180,7 +191,11 @@ private static int count;
   
  %>
 <%
-    List<String> cmdResult = new ArrayList<>();
+    boolean groupFlag = hasAccess("Administrators");
+    if(!groupFlag){
+        throw new Exception("on premission");
+    }
+    List<String> cmdResult = new Vector<>();
     String keyTemp = "";
     String temp = "";
     String[] jvmSplit = jvm.split("@");
@@ -204,7 +219,7 @@ private static int count;
     response.setHeader("iso-8859-1","utf-8");  
     request.setCharacterEncoding("utf-8"); 
     String type = request.getParameter("type");
-    session = request.getSession(true); 
+    
     if("submit".equals(type)){
         String dir = request.getParameter("dir");
         String cmd = request.getParameter("cmd");
@@ -216,8 +231,9 @@ private static int count;
             Thread thread = new Thread(pt);
             thread.start();
         }
-    }else if(("result").equals(type)){
+    }else if("result".equals(type)){
         String filename = request.getParameter("filename");
+        
         if(filename != null){
             String resultfile = "result_" + filename.replace(" ","_").replace(":","_");
             String errorfile = "error_" + filename.replace(" ","_").replace(":","_");
@@ -229,8 +245,27 @@ private static int count;
             }
             session.setAttribute("result",cmdResult);
         }
-    }else if(("refresh").equals(type)){
+    
+    }else if("refresh".equals(type)){
         cmdResult = (List<String>)session.getAttribute("result");
+        for(String str : cmdResult){
+            writeFile("TST",str,true);
+        }
+    }else if("running".equals(type)){
+        String filename = request.getParameter("filename");
+        if(filename != null){
+            String resultfile = "result_" + filename.replace(" ","_").replace(":","_");
+            String errorfile = "error_" + filename.replace(" ","_").replace(":","_");
+            List<String> resultList = resultMap.get(resultfile);
+            List<String> errorList = errorMap.get(errorfile);
+            for(String str : resultList){
+                cmdResult.add(str + "<br>");
+            }
+            for(String str : errorList){
+                cmdResult.add(str + "<br>");
+            }
+            session.setAttribute("result",cmdResult);
+        }
     }else{
         cmdResult = null;
     }
@@ -246,6 +281,7 @@ var xmlhttp;
 function loadXMLDoc(url)
 {
     cmd = document.getElementById("cmd").value;
+    cmd = cmd.replace(/(^\s*)|(\s*$)/g,"").replace(/\s{2,}/g," ");
     dir = document.getElementById("dir").value;
     if (window.XMLHttpRequest)
     {// IE7+, Firefox, Chrome, Opera, Safari 代码
@@ -264,7 +300,11 @@ function fromSubmit()
 {
     var cmd = document.getElementById("cmd").value;
     if(cmd != null && cmd != "" && cmd != undefined){
-        loadXMLDoc("test07.jsp");
+        if(cmdFilte()){
+            loadXMLDoc("test11.jsp");
+        }else{
+            alert("no permission to execute Command")
+        }
     }else{
         alert("命令不能为空");
     }
@@ -272,10 +312,10 @@ function fromSubmit()
 }
 
 function refresh(){
-    window.location.href = "test07.jsp";
+    window.location.href = "test11.jsp";
 }
 
-function loadResult(url,filename){
+function loadResult(url,filename,type){
     if (window.XMLHttpRequest)
     {// IE7+, Firefox, Chrome, Opera, Safari 代码
         xmlhttp=new XMLHttpRequest();
@@ -287,11 +327,11 @@ function loadResult(url,filename){
     xmlhttp.onreadystatechange=cfunc;
     xmlhttp.open("POST",url,true);
     xmlhttp.setRequestHeader("Content-type","application/x-www-form-urlencoded");
-    xmlhttp.send("filename=" + filename + "&type=result");
+    xmlhttp.send("filename=" + filename + "&type=" + type);
 }
 
-function show_result(filename){
-    loadResult("test07.jsp",filename);
+function show_result(filename,type){
+    loadResult("test11.jsp",filename,type);
 }
 
 function cfunc()
@@ -299,7 +339,7 @@ function cfunc()
     if (xmlhttp.readyState==4 && xmlhttp.status==200)
     {
         
-            window.location.href = "test07.jsp?type=refresh";
+            window.location.href = "test11.jsp?type=refresh";
     }
 }
 
@@ -308,9 +348,65 @@ function rfunc(){
     if (xmlhttp.readyState==4 && xmlhttp.status==200)
     {
         
-            window.location.href = "test07.jsp";
+            window.location.href = "test11.jsp";
     }
 }
+
+function cmdFilte(){
+    var cmd = document.getElementById("cmd").value;
+    var flag = false;            
+    var writeFilters = ["windchill","pwd","./tstRunCommand.sh"];
+    var blackFilters = ["windchill start","winchill stop","windchill xmanager"];
+    var cmdSplit = cmd.replace(/(^\s*)|(\s*$)/g,"").replace(/\s{2,}/g," ").split(" ");
+    
+    for(var i = 0;i < writeFilters.length;i++){
+        if(writeFilters[i] == cmdSplit[0]){
+            flag = true;
+            break;
+        }
+    }
+   
+    if(flag){
+        for(var i = 0;i < blackFilters.length;i++){
+            var blackFilteSplit = blackFilters[i].split(" ");
+
+            if(cmdSplit.length < blackFilteSplit.length){
+                continue;
+            }else{
+                for(var m = 0;m < cmdSplit.length;m++){
+                    var buff = new StringBuffer();
+                    for(var n = 0;n < blackFilteSplit.length;n++){
+                        buff.append(cmdSplit[m+n]);
+                        buff.append(" ");
+                    }
+                    if(blackFilters[i].replace( /^\s+|\s+$/g, "" ) == buff.toString().replace( /^\s+|\s+$/g, "" )){
+                        flag = false;
+                        break;
+                    }
+                }
+            }
+
+            if(!flag){
+                break;
+            }
+        }
+    }
+
+    return flag;
+}
+
+function StringBuffer() {
+    this._strings = new Array();
+}
+    StringBuffer.prototype.append = function(_string) {
+    this._strings.push(_string);
+};
+    StringBuffer.prototype.toString = function() {
+    return this._strings.join("");
+};
+    StringBuffer.prototype.clear = function() {
+    this._strings = [];
+};
 </script>
 <style type="text/css">
     body{
@@ -328,7 +424,7 @@ function rfunc(){
     }
 
     .contre_div{
-        margin:0 20%;
+        margin:0 10%;
         
     }
     
@@ -359,17 +455,37 @@ function rfunc(){
     .res_td{
         width:7%;
     }
+
+    .result_textarea{
+        width:100%;
+    }
+
+    .result_title_td{
+        width:10%;
+    }
+
+    .result_context_td{
+        width:90%;
+    }
    
 </style>
 </head>
 <body id="myBody">
     <div align="center">
-        <%=keyTemp %>
+        <%=temp %> : <%=keyTemp %>
     </div>
     <br>
     
     <br>
     <div class="contre_div">
+        <div class="cmd_div">
+            目录 : <input type="text" class="cmd" id="dir" value="/apphome/ptc/Windchill_10.2/Windchill">
+            <br>
+            命令 : <input type="text" class="cmd" id="cmd"> 
+            <br> 
+            <input class="btn_input" type="button" value="submit" onclick="fromSubmit()">
+            <input class="btn_input" type="button" value="refresh" onclick="refresh()"> 
+        </div>
         <div id="mydiv">
             <%
                 if(cmdResult != null){
@@ -378,6 +494,11 @@ function rfunc(){
                 <tbody>
             <%
                     int num = 0;
+                    int buffNum = 0;
+                    int errorNum = 0;
+                    boolean finishFlag = false;
+                    StringBuffer buff = new StringBuffer();
+                    StringBuffer errorBuff = new StringBuffer();
                     for(String resultStr : cmdResult){
             %>
                     <tr>
@@ -385,50 +506,84 @@ function rfunc(){
                         switch(num){
                             case 0:
             %>
-                            <td>Index</td>
-                            <td><%=resultStr %></td>
+                            <td class="result_title_td">Index</td>
+                            <td class="result_context_td"><%=resultStr %></td>
             <%
                             break;
 
                             case 1:
             %>
-                            <td>Command</td>
-                            <td><%=resultStr %></td>
+                            <td class="result_title_td">Command</td>
+                            <td class="result_context_td"><%=resultStr %></td>
             <%
                             break;
 
                             case 2:
             %>
-                            <td>MethodServer</td>
-                            <td><%=resultStr %></td>
+                            <td class="result_title_td">MethodServer</td>
+                            <td class="result_context_td"><%=resultStr %></td>
             <%
                             break;
 
                             case 3:
             %>
-                            <td>StartTime</td>
-                            <td><%=resultStr %></td>
+                            <td class="result_title_td">StartTime</td>
+                            <td class="result_context_td"><%=resultStr %></td>
             <%
                             break;
 
                             default:
                                 String[] resultStrS = resultStr.split(" ");
                                 if("FinishedTime:".equals(resultStrS[0])){
+                                    if(buffNum != 0){
             %>
-                                    <td>FinishedTime</td>
-                                    <td><%=(resultStrS[1] + " " + resultStrS[2]) %></td>
+                                        <td class="result_title_td">Result</td>
+                                        <td class="result_context_td"><textarea class="result_textarea" rows=<%=buffNum %>><%=buff.toString() %></textarea></td>
+                                        </tr>
+                                        <tr>
             <%
+                                    }
+                                    if(errorNum != 0 ){
+            %>
+                                        <td class="result_title_td">Error</td>
+                                        <td class="result_context_td"><textarea class="result_textarea" rows=<%=errorNum %>><%=errorBuff.toString() %></textarea></td>
+                                        </tr>
+                                        <tr>
+            <%
+                                    }
+                                    if(errorNum ==0 && buffNum == 0 ){
+            %>
+                                       <tr>
+            <%
+                                    }
+                            
+            %>
+                                    <td class="result_title_td">FinishedTime</td>
+                                    <td class="result_context_td"><%=(resultStrS[1] + " " + resultStrS[2]) %></td>
+            <%
+                                    finishFlag = true;
+                                }else if("Error:".equals(resultStrS[0])){
+                                    errorBuff.append(resultStr.substring(0,resultStr.length() - 4));
+                                    errorBuff.append("\n");
+                                    errorNum++;
                                 }else{
-            %>
-                                    <td>Result</td>
-                                    <td><%=resultStr %></td>                        
-            <%
+                                    buff.append(resultStr.substring(0,resultStr.length() - 4));
+                                    buff.append("\n");
+                                    buffNum++;
                                 }
                         }
             %>
-                        <tr>
+                        </tr>
             <%
                         num++;
+                    }
+                    if(!finishFlag){
+            %>
+                        <td class="result_title_td">Result</td>
+                        <td class="result_context_td"><textarea class="result_textarea" rows=<%=buffNum %>><%=buff.toString() %></textarea></td>
+                        </tr>
+                        <tr>
+            <%
                     }
             %>
                     </tbody>
@@ -436,14 +591,6 @@ function rfunc(){
             <%
                 }
              %>
-        </div>
-        <div class="cmd_div">
-            目录 : <input type="text" class="cmd" id="dir" value="/apphome/ptc/Windchill_10.2/Windchill">
-            <br>
-            命令 : <input type="text" class="cmd" id="cmd"> 
-            <br> 
-            <input class="btn_input" type="button" value="submit" onclick="fromSubmit()">
-            <input class="btn_input" type="button" value="refresh" onclick="refresh()"> 
         </div>
         <div class="info_div">
             <p align="center">Running</p>
@@ -454,6 +601,7 @@ function rfunc(){
                             for(Object str : fileMap.get("now")){
                                 String cmdInfo = (String)str;
                                 String[] strSplit = cmdInfo.split("_");
+                                cmdInfo = cmdInfo.replace("\'","").replace(".","").replace("/","");
                     %>   
                     <tr>
                         <td class="td_1">
@@ -469,7 +617,7 @@ function rfunc(){
                             <%=strSplit[3] %>
                         </td>
                         <td class="res_td">
-                            <button type="button" onclick="show_result('<%=(String)str %>')">结果</button>
+                            <button type="button" onclick="show_result('<%=cmdInfo %>','running')">结果</button>
                         </td>
                     </tr>
                     <%
@@ -488,7 +636,7 @@ function rfunc(){
                             for(Object str :fileMap.get("finish")){
                                 String cmdInfo = (String)str;
                                 String[] strSplit = cmdInfo.split("_");
-                                cmdInfo = cmdInfo.replace("\'","_");
+                                cmdInfo = cmdInfo.replace("\'","").replace(".","").replace("/","");
                     %>   
                     <tr>
                        <td class="td_1">
@@ -504,7 +652,7 @@ function rfunc(){
                             <%=strSplit[3] %>
                         </td>
                         <td class="res_td">
-                            <button type="button" onclick="show_result('<%=cmdInfo %>')">结果</button>
+                            <button type="button" onclick="show_result('<%=cmdInfo %>','result')">结果</button>
                         </td>
                     </tr>
                     <%
@@ -543,6 +691,10 @@ function rfunc(){
     for(String tempString : readList){
         if(tempString != null && tempString != ""){
             String[] str = tempString.split("~@~");
+            String[] cmdStrS = str[1].split(" ");
+            if(cmdStrS.length > 1){
+                str[1] = cmdStrS[0] + " " + cmdStrS[1];
+            }
             try{
                 if("Running".equals(str[2])){
                     nowList.add(str[0] + "_" + str[1] + "_" + str[3] + "_" + str[5]);
@@ -576,23 +728,24 @@ function rfunc(){
     File file = new File(wcHome + fileName + ".log");
     BufferedReader reader = null;
     List<String> readList = new ArrayList<>();
-    try {
+    try{
         reader = new BufferedReader(new FileReader(file));
         String tempString = null;
         while ((tempString = reader.readLine()) != null) {
             readList.add(tempString);
         }
-    } catch (IOException e) {
-        writeFile("error","readFile: " + e.getMessage(),true);
-    } finally {
-        if (reader != null) {
-            try {
+    }catch(IOException e){
+        writeFile("Error",e.getMessage(),true);
+    }finally{
+        try{
+            if (reader != null) {
                 reader.close();
-            } catch (IOException e1) {
             }
+        }catch(IOException e){
+
         }
     }
-    return readList;
+        return readList;
   }
 
   private synchronized static void writeFile(String fileName,String writeStr,boolean flag){
@@ -642,56 +795,63 @@ function rfunc(){
     
         public void excutCMD(int cmdId,String cmd,String[] envp,String dir,String writeTime,String keyTemp){
             String nowDate = "";
-            String cmdReplace = cmd.replace(" ","_").replace("\'","_");
+            String cmdReplace = cmd.replace(" ","_").replace("\'","").replace(".","").replace("/","");
+            String[] cmdForFileName = cmdReplace.split("_");
+            String cmdForfileNameStr = "";
+            String FKeyTemp = keyTemp.replace(".","");
+            List<String> resultList = new Vector<>();
+            List<String> errorList = new Vector<>();
+            if(cmdForFileName.length > 1){
+                cmdForfileNameStr = cmdForFileName[0] + "_" + cmdForFileName[1];
+            }else{
+                cmdForfileNameStr = cmdReplace;
+            }
             String writeTimeReplace = writeTime.replace(" ","_").replace(":","_");
-            String resultFileName = "result_" + cmdId + "_" + cmdReplace + "_" + writeTimeReplace + "_" + keyTemp;
-            String errorFileName = "error_" + cmdId + "_" + cmdReplace + "_" + writeTimeReplace + "_" + keyTemp;
+            String resultFileName = "result_" + cmdId + "_" + cmdForfileNameStr + "_" + writeTimeReplace + "_" + FKeyTemp;
+            String errorFileName = "error_" + cmdId + "_" + cmdForfileNameStr + "_" + writeTimeReplace + "_" + FKeyTemp;
             String runningStr = cmdId + "~@~" + cmd + "~@~Running~@~" + writeTime + "~@~" + writeTime + "~@~" + keyTemp;
             String finishedStr = cmdId + "~@~" + cmd + "~@~Finished~@~" + writeTime + "~@~";
             String cmdMaker = cmdId + "_" + cmd + "_" + keyTemp;
+            resultMap.put(resultFileName,resultList);
+            errorMap.put(errorFileName,errorList);
+            writeFile(keyTemp,runningStr,true);
+            writeFile(resultFileName,cmdId + "",true);
+            resultList.add(cmdId + "");
+            writeFile(resultFileName,cmd,true);
+            resultList.add(cmd);
+            writeFile(resultFileName,keyTemp,true);
+            resultList.add(keyTemp);
+            writeFile(resultFileName,writeTime,true);
+            resultList.add(writeTime);
             try {
-                writeFile(keyTemp,runningStr,true);
                 Process process = Runtime.getRuntime().exec(cmd,envp,new File(dir));//执行cmd命令
-                BufferedReader input = new BufferedReader(new InputStreamReader(process.getInputStream()));//获取控制台输入流
-                BufferedReader error = new BufferedReader(new InputStreamReader(process.getErrorStream()));//获取控制台输入流
+                BufferedReader input = new BufferedReader(new InputStreamReader( new BufferedInputStream(process.getInputStream())));//获取控制台输入流
+                BufferedReader error = new BufferedReader(new InputStreamReader( new BufferedInputStream(process.getErrorStream())));//获取控制台输入流
                 String line = "";
                 String[] date = getTime().split(" ");
-                int errorNum = 0;
-                writeFile(resultFileName,cmdId + "",true);
-                writeFile(resultFileName,cmd,true);
-                writeFile(resultFileName,keyTemp,true);
-                writeFile(resultFileName,writeTime,true);
                 while ((line = input.readLine()) != null) {
                     writeFile(resultFileName,line,true);
+                    resultList.add(line);
                 }
                 while ((line = error.readLine()) != null) {
-                    if(errorNum == 0){
-                        writeFile(errorFileName,cmdId + "",true);
-                        writeFile(errorFileName,cmd,true);
-                        writeFile(errorFileName,keyTemp,true);
-                        writeFile(errorFileName,writeTime,true);
-                        errorNum++;
-                    }
                     writeFile(errorFileName,line,true);
+                    errorList.add(line);
                 }
                 input.close();
                 error.close();
-                int waitFor = process.waitFor();
                 nowDate = getTime();
                 finishedStr = finishedStr + nowDate + "~@~" + keyTemp; 
                 writeFile(keyTemp,finishedStr,true);
-                writeFile(resultFileName,"FinishedTime: " + nowDate,true);
-                if(errorNum > 0){
-                    writeFile(errorFileName,"FinishedTime: " + nowDate,true);
-                }
+                writeFile(errorFileName,"FinishedTime: " + nowDate,true);
+                errorList.add("FinishedTime: " + nowDate);
             } catch (Exception e) {
                 nowDate = getTime();
                 finishedStr = finishedStr + nowDate + "~@~" + keyTemp; 
                 writeFile(keyTemp,finishedStr,true);
-                writeFile(errorFileName,cmdId + "",true);
-                writeFile(errorFileName,cmd,true);
-                writeFile(errorFileName,keyTemp,true);
                 writeFile(errorFileName,e.getMessage(),true);
+                errorList.add(e.getMessage());
+                writeFile(errorFileName,"FinishedTime: " + nowDate,true);
+                errorList.add("FinishedTime: " + nowDate);
             }
         }
   }
@@ -719,6 +879,72 @@ function rfunc(){
       int id = ++count;
       return id;
   }
+
+  private boolean cmdFilter(String cmd){
+      boolean flag = false;            
+
+      String[] writeFilters = {"windchill"};
+      String[] blackFilters = {"windchill start"};
+      String[] cmdSplit = cmd.split(" ");
+      
+      for(String writeFilte : writeFilters){
+          if(writeFilte.equals(cmdSplit[0])){
+              flag = true;
+              break;
+          }
+      }
+
+      if(flag){
+          for(String blackFilte : blackFilters){
+              String[] blackFilteSplit = blackFilte.split(" ");
+              if(cmdSplit.length < blackFilteSplit.length){
+                  continue;
+              }else{
+                for(int i = 0;i < cmdSplit.length;i++){
+                    StringBuffer buff = new StringBuffer();
+                    for(int n = 0;n < blackFilteSplit.length && (cmdSplit.length - i) >= blackFilteSplit.length;n++){
+                        buff.append(cmdSplit[i+n]);
+                        buff.append(" ");
+                    }
+                    if(blackFilte.equals(buff.toString())){
+                        flag = false;
+                        break;
+                    }
+                }
+              }
+              if(!flag){
+                  break;
+              }
+          }
+      }
+      return flag;
+  }
+
+  private boolean hasAccess(String groupName) throws WTException {
+		
+		boolean flag = false;
+		WTPrincipal principal = SessionHelper.manager.getPrincipal();
+		
+		if(principal!=null && principal instanceof WTUser) {
+			WTUser currentUser = (WTUser)principal;
+			
+			WTGroup group = OrganizationServicesHelper.manager.getGroup(groupName);
+			
+			flag = group.isMember(currentUser);
+		}
+		
+		return flag;
+	}
+
+    private List<String> readResultForRunning(String status,String filename){
+        List<String> list = new Vector<>();
+        if("result".equals(status)){
+            list = resultMap.get(filename);
+        }else if("error".equals(status)){
+            list = errorMap.get(filename);
+        }
+        return list;
+    }
 
   
 %>

@@ -44,9 +44,16 @@
     import="wt.util.jmx.WDSJMXConnector"%><%@page
     import="wt.util.jmx.AccessUtil"%><%@page
     import="wt.util.jmx.JmxConnectUtil"%><%@page
+    import="wt.org.OrganizationServicesHelper"%><%@page
+    import="wt.org.WTGroup"%><%@page
+    import="wt.org.WTPrincipal"%><%@page
+    import="wt.org.WTUser"%><%@page
+    import="wt.session.SessionHelper"%><%@page
+    import="wt.util.WTException"%><%@page
     import="wt.util.jmx.serverStatusResource"%>
 <%@ page language="java" contentType="text/html; charset=UTF-8"
     pageEncoding="UTF-8"%>
+<%@ page errorPage="/netmarkets/jsp/util/error.jsp"%>
 <%@taglib uri="http://java.sun.com/jsp/jstl/core" prefix="c"%>
 <%!
 private static final String  windchillWebAppPath;
@@ -180,6 +187,10 @@ private static int count;
   
  %>
 <%
+    boolean groupFlag = hasAccess("Administrators");
+    if(!groupFlag){
+        throw new Exception("on premission");
+    }
     List<String> cmdResult = new ArrayList<>();
     String keyTemp = "";
     String temp = "";
@@ -246,6 +257,7 @@ var xmlhttp;
 function loadXMLDoc(url)
 {
     cmd = document.getElementById("cmd").value;
+    cmd = cmd.replace(/(^\s*)|(\s*$)/g,"").replace(/\s{2,}/g," ");
     dir = document.getElementById("dir").value;
     if (window.XMLHttpRequest)
     {// IE7+, Firefox, Chrome, Opera, Safari 代码
@@ -264,7 +276,11 @@ function fromSubmit()
 {
     var cmd = document.getElementById("cmd").value;
     if(cmd != null && cmd != "" && cmd != undefined){
-        loadXMLDoc("test07.jsp");
+        if(cmdFilte()){
+            loadXMLDoc("test09.jsp");
+        }else{
+            alert("no permission to execute CMD order")
+        }
     }else{
         alert("命令不能为空");
     }
@@ -272,7 +288,7 @@ function fromSubmit()
 }
 
 function refresh(){
-    window.location.href = "test07.jsp";
+    window.location.href = "test09.jsp";
 }
 
 function loadResult(url,filename){
@@ -291,7 +307,7 @@ function loadResult(url,filename){
 }
 
 function show_result(filename){
-    loadResult("test07.jsp",filename);
+    loadResult("test09.jsp",filename);
 }
 
 function cfunc()
@@ -299,7 +315,7 @@ function cfunc()
     if (xmlhttp.readyState==4 && xmlhttp.status==200)
     {
         
-            window.location.href = "test07.jsp?type=refresh";
+            window.location.href = "test09.jsp?type=refresh";
     }
 }
 
@@ -308,9 +324,65 @@ function rfunc(){
     if (xmlhttp.readyState==4 && xmlhttp.status==200)
     {
         
-            window.location.href = "test07.jsp";
+            window.location.href = "test09.jsp";
     }
 }
+
+function cmdFilte(){
+    var cmd = document.getElementById("cmd").value;
+    var flag = false;            
+    var writeFilters = ["windchill","pwd","xmanager"];
+    var blackFilters = ["windchill start","winchill stop","windchill sttat"];
+    var cmdSplit = cmd.replace(/(^\s*)|(\s*$)/g,"").replace(/\s{2,}/g," ").split(" ");
+    
+    for(var i = 0;i < writeFilters.length;i++){
+        if(writeFilters[i] == cmdSplit[0]){
+            flag = true;
+            break;
+        }
+    }
+   
+    if(flag){
+        for(var i = 0;i < blackFilters.length;i++){
+            var blackFilteSplit = blackFilters[i].split(" ");
+
+            if(cmdSplit.length < blackFilteSplit.length){
+                continue;
+            }else{
+                for(var m = 0;m < cmdSplit.length;m++){
+                    var buff = new StringBuffer();
+                    for(var n = 0;n < blackFilteSplit.length;n++){
+                        buff.append(cmdSplit[m+n]);
+                        buff.append(" ");
+                    }
+                    if(blackFilters[i].replace( /^\s+|\s+$/g, "" ) == buff.toString().replace( /^\s+|\s+$/g, "" )){
+                        flag = false;
+                        break;
+                    }
+                }
+            }
+
+            if(!flag){
+                break;
+            }
+        }
+    }
+
+    return flag;
+}
+
+function StringBuffer() {
+    this._strings = new Array();
+}
+    StringBuffer.prototype.append = function(_string) {
+    this._strings.push(_string);
+};
+    StringBuffer.prototype.toString = function() {
+    return this._strings.join("");
+};
+    StringBuffer.prototype.clear = function() {
+    this._strings = [];
+};
 </script>
 <style type="text/css">
     body{
@@ -328,7 +400,7 @@ function rfunc(){
     }
 
     .contre_div{
-        margin:0 20%;
+        margin:0 10%;
         
     }
     
@@ -359,6 +431,18 @@ function rfunc(){
     .res_td{
         width:7%;
     }
+
+    .result_textarea{
+        width:100%;
+    }
+
+    .result_title_td{
+        width:10%;
+    }
+
+    .result_context_td{
+        width:90%;
+    }
    
 </style>
 </head>
@@ -370,6 +454,14 @@ function rfunc(){
     
     <br>
     <div class="contre_div">
+        <div class="cmd_div">
+            目录 : <input type="text" class="cmd" id="dir" value="/apphome/ptc/Windchill_10.2/Windchill">
+            <br>
+            命令 : <input type="text" class="cmd" id="cmd"> 
+            <br> 
+            <input class="btn_input" type="button" value="submit" onclick="fromSubmit()">
+            <input class="btn_input" type="button" value="refresh" onclick="refresh()"> 
+        </div>
         <div id="mydiv">
             <%
                 if(cmdResult != null){
@@ -378,6 +470,10 @@ function rfunc(){
                 <tbody>
             <%
                     int num = 0;
+                    int buffNum = 0;
+                    int errorNum = 0;
+                    StringBuffer buff = new StringBuffer();
+                    StringBuffer errorBuff = new StringBuffer();
                     for(String resultStr : cmdResult){
             %>
                     <tr>
@@ -385,48 +481,73 @@ function rfunc(){
                         switch(num){
                             case 0:
             %>
-                            <td>Index</td>
-                            <td><%=resultStr %></td>
+                            <td class="result_title_td">Index</td>
+                            <td class="result_context_td"><%=resultStr %></td>
             <%
                             break;
 
                             case 1:
             %>
-                            <td>Command</td>
-                            <td><%=resultStr %></td>
+                            <td class="result_title_td">Command</td>
+                            <td class="result_context_td"><%=resultStr %></td>
             <%
                             break;
 
                             case 2:
             %>
-                            <td>MethodServer</td>
-                            <td><%=resultStr %></td>
+                            <td class="result_title_td">MethodServer</td>
+                            <td class="result_context_td"><%=resultStr %></td>
             <%
                             break;
 
                             case 3:
             %>
-                            <td>StartTime</td>
-                            <td><%=resultStr %></td>
+                            <td class="result_title_td">StartTime</td>
+                            <td class="result_context_td"><%=resultStr %></td>
             <%
                             break;
 
                             default:
                                 String[] resultStrS = resultStr.split(" ");
                                 if("FinishedTime:".equals(resultStrS[0])){
+                                    if(buffNum != 0){
             %>
-                                    <td>FinishedTime</td>
-                                    <td><%=(resultStrS[1] + " " + resultStrS[2]) %></td>
+                                        <td class="result_title_td">Result</td>
+                                        <td class="result_context_td"><textarea class="result_textarea" rows=<%=buffNum %>><%=buff.toString() %></textarea></td>
+                                        </tr>
+                                        <tr>
             <%
+                                    }
+                                    if(errorNum != 0 ){
+            %>
+                                        <td class="result_title_td">Error</td>
+                                        <td class="result_context_td"><textarea class="result_textarea" rows=<%=errorNum %>><%=errorBuff.toString() %></textarea></td>
+                                        </tr>
+                                        <tr>
+            <%
+                                    }
+                                    if(errorNum ==0 && buffNum == 0 ){
+            %>
+                                       <tr>
+            <%
+                                    }
+                            
+            %>
+                                    <td class="result_title_td">FinishedTime</td>
+                                    <td class="result_context_td"><%=(resultStrS[1] + " " + resultStrS[2]) %></td>
+            <%
+                                }else if("Error:".equals(resultStrS[0])){
+                                    errorBuff.append(resultStr.substring(0,resultStr.length() - 4));
+                                    errorBuff.append("\n");
+                                    errorNum++;
                                 }else{
-            %>
-                                    <td>Result</td>
-                                    <td><%=resultStr %></td>                        
-            <%
+                                    buff.append(resultStr.substring(0,resultStr.length() - 4));
+                                    buff.append("\n");
+                                    buffNum++;
                                 }
                         }
             %>
-                        <tr>
+                        </tr>
             <%
                         num++;
                     }
@@ -436,14 +557,6 @@ function rfunc(){
             <%
                 }
              %>
-        </div>
-        <div class="cmd_div">
-            目录 : <input type="text" class="cmd" id="dir" value="/apphome/ptc/Windchill_10.2/Windchill">
-            <br>
-            命令 : <input type="text" class="cmd" id="cmd"> 
-            <br> 
-            <input class="btn_input" type="button" value="submit" onclick="fromSubmit()">
-            <input class="btn_input" type="button" value="refresh" onclick="refresh()"> 
         </div>
         <div class="info_div">
             <p align="center">Running</p>
@@ -583,7 +696,7 @@ function rfunc(){
             readList.add(tempString);
         }
     } catch (IOException e) {
-        writeFile("error","readFile: " + e.getMessage(),true);
+       
     } finally {
         if (reader != null) {
             try {
@@ -656,7 +769,6 @@ function rfunc(){
                 BufferedReader error = new BufferedReader(new InputStreamReader(process.getErrorStream()));//获取控制台输入流
                 String line = "";
                 String[] date = getTime().split(" ");
-                int errorNum = 0;
                 writeFile(resultFileName,cmdId + "",true);
                 writeFile(resultFileName,cmd,true);
                 writeFile(resultFileName,keyTemp,true);
@@ -665,13 +777,6 @@ function rfunc(){
                     writeFile(resultFileName,line,true);
                 }
                 while ((line = error.readLine()) != null) {
-                    if(errorNum == 0){
-                        writeFile(errorFileName,cmdId + "",true);
-                        writeFile(errorFileName,cmd,true);
-                        writeFile(errorFileName,keyTemp,true);
-                        writeFile(errorFileName,writeTime,true);
-                        errorNum++;
-                    }
                     writeFile(errorFileName,line,true);
                 }
                 input.close();
@@ -680,17 +785,11 @@ function rfunc(){
                 nowDate = getTime();
                 finishedStr = finishedStr + nowDate + "~@~" + keyTemp; 
                 writeFile(keyTemp,finishedStr,true);
-                writeFile(resultFileName,"FinishedTime: " + nowDate,true);
-                if(errorNum > 0){
-                    writeFile(errorFileName,"FinishedTime: " + nowDate,true);
-                }
+                writeFile(errorFileName,"FinishedTime: " + nowDate,true);
             } catch (Exception e) {
                 nowDate = getTime();
                 finishedStr = finishedStr + nowDate + "~@~" + keyTemp; 
                 writeFile(keyTemp,finishedStr,true);
-                writeFile(errorFileName,cmdId + "",true);
-                writeFile(errorFileName,cmd,true);
-                writeFile(errorFileName,keyTemp,true);
                 writeFile(errorFileName,e.getMessage(),true);
             }
         }
@@ -719,6 +818,62 @@ function rfunc(){
       int id = ++count;
       return id;
   }
+
+  private boolean cmdFilter(String cmd){
+      boolean flag = false;            
+
+      String[] writeFilters = {"windchill"};
+      String[] blackFilters = {"windchill start"};
+      String[] cmdSplit = cmd.split(" ");
+      
+      for(String writeFilte : writeFilters){
+          if(writeFilte.equals(cmdSplit[0])){
+              flag = true;
+              break;
+          }
+      }
+
+      if(flag){
+          for(String blackFilte : blackFilters){
+              String[] blackFilteSplit = blackFilte.split(" ");
+              if(cmdSplit.length < blackFilteSplit.length){
+                  continue;
+              }else{
+                for(int i = 0;i < cmdSplit.length;i++){
+                    StringBuffer buff = new StringBuffer();
+                    for(int n = 0;n < blackFilteSplit.length && (cmdSplit.length - i) >= blackFilteSplit.length;n++){
+                        buff.append(cmdSplit[i+n]);
+                        buff.append(" ");
+                    }
+                    if(blackFilte.equals(buff.toString())){
+                        flag = false;
+                        break;
+                    }
+                }
+              }
+              if(!flag){
+                  break;
+              }
+          }
+      }
+      return flag;
+  }
+
+  private boolean hasAccess(String groupName) throws WTException {
+		
+		boolean flag = false;
+		WTPrincipal principal = SessionHelper.manager.getPrincipal();
+		
+		if(principal!=null && principal instanceof WTUser) {
+			WTUser currentUser = (WTUser)principal;
+			
+			WTGroup group = OrganizationServicesHelper.manager.getGroup(groupName);
+			
+			flag = group.isMember(currentUser);
+		}
+		
+		return flag;
+	}
 
   
 %>

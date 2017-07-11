@@ -1,0 +1,4 @@
+1.数据量过小时,OS不会实时把数据写入磁盘,用filewrite和filereader不能实时读取文件中的数据.
+
+2.ArrayList非线程安全,在多个线程对ArrayList做操作的时候,一个线程对ArrayList修改,一个线程读取ArrayList时,其实是读取的ArrayList的临时内存,不能实时同步读取数据.
+使用Vector(线程安全),可以解决无法同步读取的问题.
